@@ -4,11 +4,12 @@ from sklearn.preprocessing import scale
 from os.path import join
 from sklearn.metrics import accuracy_score as accuracy, f1_score, mean_absolute_error as mae
 import os
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Dense, Dropout, Flatten
-from tensorflow.keras.layers import Conv2D, MaxPool2D
+from tensorflow import keras
+from keras.models import Sequential, load_model
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPool2D, GlobalAveragePooling2D
 from pathlib2 import Path
-from tensorflow.keras import backend as K, callbacks
+from keras import backend as K, callbacks
 
 def f1(y_true, y_pred):
     def recall(y_true, y_pred):
@@ -133,6 +134,9 @@ def cnn_data_sequence(data, target, seque_len):
 
 def sklearn_acc(model, test_data, test_target):
     overall_results = model.predict(test_data)
+    print("overall_results "+ str(overall_results))
+    print("overall_results shape"+ str(overall_results.shape))
+    print("test_target "+ str(test_target))
     test_pred = (overall_results > 0.5).astype(int)
     acc_results = [mae(overall_results, test_target), accuracy(test_pred, test_target),
                    f1_score(test_pred, test_target, average='macro')]
@@ -141,17 +145,25 @@ def sklearn_acc(model, test_data, test_target):
 
 def CNN(train_data, test_data, train_target, test_target):
     # hisory of data in each sample
-    seq_len = 60
+    seq_len = 10
     epoc = 100
     drop = 0.1
 
     # creating sample each containing #seq_len history
     cnn_train_data, cnn_train_target = cnn_data_sequence(train_data, train_target, seq_len)
+    print("cnn_train_data "+str(cnn_train_data))
+    print("cnn_train_data shape "+str(cnn_train_data.shape))
+    print("cnn_train_target "+str(cnn_train_target))
+    print("cnn_train_target shape "+str(cnn_train_target.shape))
     cnn_test_data, cnn_test_target = cnn_data_sequence(test_data, test_target, seq_len)
+    print("cnn_test_data " + str(cnn_test_data))
+    print("cnn_test_data shape " + str(cnn_test_data.shape))
+    print("cnn_test_target " + str(cnn_test_target))
+    print("cnn_test_target shape " + str(cnn_test_target.shape))
     result = []
 
     # Running CNNpred several times
-    for i in range(1,40):
+    for i in range(1,2):
         K.clear_session()
         print ('i: ', i)
         my_file = Path( join(Base_dir, '3D-models/{}/model/{}-{}-{}-{}-{}.h5'.format(predict_index, epoc, seq_len, number_filter, drop, i)))
@@ -178,6 +190,7 @@ def CNN(train_data, test_data, train_target, test_target):
             model.add(Flatten())
             model.add(Dropout(drop))
             model.add(Dense(1, activation='sigmoid'))
+            print("Dense shape 8" + str(model.output_shape))
 
             model.compile(optimizer='Adam', loss='mae', metrics=['acc',f1])
 
@@ -192,8 +205,11 @@ def CNN(train_data, test_data, train_target, test_target):
         result.append(test_pred)
 
     print('saving results')
+    print("result "+str(result))
     results = pd.DataFrame(result , columns=['MAE', 'Accuracy', 'F-score'])
+    print("results.shape " + str(results.shape))
     results = results.append([results.mean(), results.max(), results.std()], ignore_index=True)
+    print("results.shape " + str(results.shape))
     results.to_csv(join(Base_dir, '3D-models/{}/new results.csv'.format(predict_index)), index=False)
 
 
