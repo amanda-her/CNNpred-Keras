@@ -7,7 +7,7 @@ import pandas as pd
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from keras.layers import Conv2D, MaxPool2D, Conv1D, BatchNormalization, Activation, GlobalAveragePooling1D, Dense, \
-    Dropout, Flatten, Input, MaxPooling1D, LSTM, MaxPool1D
+    Dropout, Flatten, Input, MaxPooling1D, LSTM, MaxPool1D, concatenate, Permute
 from keras.metrics import Accuracy
 from keras.models import Sequential, load_model, Model
 from keras.optimizers import Adam
@@ -230,7 +230,10 @@ def sklearn_acc(model, test_data, test_target):
     if model_param == "FCN":
         test_pred = np.argmax(overall_results, axis=1)
         test_target1 = np.argmax(test_target, axis=1)
-    else:  # CNNpred or CNN-LSTM
+    # elif model_param == "CNN-LSTM":
+    #     test_pred = (overall_results > 0).astype(int)
+    #     test_target1 = test_target
+    else:  # CNNpred
         test_pred = (overall_results > 0.5).astype(int)
         test_target1 = test_target
     print("test_pred")
@@ -293,6 +296,10 @@ def compile():
         input_shape = (seq_len, number_feature)
         input_layer = Input(input_shape)
 
+        perm_layer = Permute((2, 1))(input_layer)
+        lstm_layer = LSTM(128)(perm_layer)
+        lstm_layer = Dropout(0.8)(lstm_layer)
+
         conv1 = Conv1D(filters=128, kernel_size=8, padding='same')(input_layer)
         conv1 = BatchNormalization()(conv1)
         conv1 = Activation(activation='relu')(conv1)
@@ -307,7 +314,9 @@ def compile():
 
         gap_layer = GlobalAveragePooling1D()(conv3)
 
-        output_layer = Dense(nb_classes, activation='softmax')(gap_layer)
+        concat = concatenate([gap_layer, lstm_layer])
+
+        output_layer = Dense(nb_classes, activation='softmax')(concat)
 
         model = Model(inputs=input_layer, outputs=output_layer)
         print(model.summary())
@@ -315,31 +324,36 @@ def compile():
 
         model.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=[Accuracy()])
 
+    elif model_param=="LSTM":
+        model.add(LSTM(128, input_shape=(seq_len, number_feature)))
+        model.add(Dense(1, activation="sigmoid"))
+        model.compile(loss='mae', optimizer='adam', metrics=metrics)
+
     elif model_param == "CNN-LSTM":
         # layer 1
         model.add(
-            Conv1D(filters=256, kernel_size=1, activation='tanh', input_shape=(seq_len, number_feature),
+            Conv1D(filters=128, kernel_size=1, activation='tanh', input_shape=(seq_len, number_feature),
                    padding="same"))
         print("layer 1 " + str(model.output_shape))
-        # model.add(
-        #     Conv1D(filters=256, kernel_size=1, activation='relu', input_shape=(seq_len, number_feature)))
-        # print("layer 1 " + str(model.output_shape))
+        model.add(
+            Conv1D(filters=256, kernel_size=1, activation='tanh', input_shape=(seq_len, number_feature)))
+        print("layer 1 " + str(model.output_shape))
         # layer 2
         model.add(MaxPooling1D(pool_size=1, padding="same"))
         print("layer 2 " + str(model.output_shape))
 
         # layer 3
-        model.add(LSTM(units=512, recurrent_activation="tanh"))
+        model.add(LSTM(units=128, recurrent_activation="tanh"))
         print("layer 3 " + str(model.output_shape))
         # model.add(RepeatVector(1))
         # print("layer 3 " + str(model.output_shape))
         # model.add(LSTM(units=256))
         # print("layer 3 " + str(model.output_shape))
 
-        model.add(Dense(1))
+        model.add(Dense(1, activation='sigmoid'))
         print("layer dense " + str(model.output_shape))
-        print(model.summary())
-        plot_model(model, to_file='model_plot_CNN-LSTM.png', show_shapes=True, show_layer_names=True)
+        # print(model.summary())
+        # plot_model(model, to_file='model_plot_CNN-LSTM.png', show_shapes=True, show_layer_names=True)
 
         model.compile(optimizer='Adam', loss='mae', metrics=[Accuracy()])
 
@@ -350,7 +364,7 @@ def train(compiled_model, data_warehouse, i, j):
     global cnn_train_data, cnn_train_target, cnn_test_data, cnn_test_target, cnn_valid_data, cnn_valid_target
     filepath = join(
         Base_dir,
-        '2D-models/best-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.h5'.format(
+        '2D-models/best1-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.h5'.format(
             model_param + str(nb_classes) if model_param == "FCN" else model_param,
             seq_len,
             number_filter,
@@ -382,7 +396,7 @@ def train(compiled_model, data_warehouse, i, j):
             custom_objects = {'f1': f1}
     else:
         print(' fitting model to target')
-        if "CNNpred" in model_param:
+        if "CNNpred" in model_param or model_param=="LSTM":
             best_model = ModelCheckpoint(filepath, monitor='val_f1', verbose=0, save_best_only=True,
                                          save_weights_only=False, mode='max', period=1)
             compiled_model.fit(cnn_train_data, cnn_train_target, epochs=epochs, batch_size=batch_size, verbose=1,
@@ -391,9 +405,9 @@ def train(compiled_model, data_warehouse, i, j):
 
         elif model_param == "FCN":
             reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=0.0001)
-            model_checkpoint = ModelCheckpoint(filepath, monitor='loss', save_best_only=True)
-            mini_batch_size = int(min(cnn_train_target.shape[0] / 10, batch_size))
-            compiled_model.fit(cnn_train_data, cnn_train_target, batch_size=mini_batch_size, epochs=epochs,
+            model_checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy', save_best_only=True)
+            # mini_batch_size = int(min(cnn_train_target.shape[0] / 10, batch_size))
+            compiled_model.fit(cnn_train_data, cnn_train_target, batch_size=batch_size, epochs=epochs,
                                verbose=1, validation_data=(cnn_valid_data, cnn_valid_target),
                                callbacks=[reduce_lr, model_checkpoint])
 
@@ -426,14 +440,19 @@ def cnn_data_sequence_pre_train(data, target):
 def prediction(data_warehouse, model, cnn_results):
     for name in order_stocks:
         value = data_warehouse[name]
-        # train_data, train_target = cnn_data_sequence_pre_train(value[0], value[1], seque_len)
+        print(value[0])
+        print(np.array(value[1]))
+        print(value[2])
+        print(value[3])
+        #train_data, train_target = cnn_data_sequence_pre_train(value[0], np.array(value[1]))
         test_data, test_target = cnn_data_sequence_pre_train(value[2], value[3])
-        # valid_data, valid_target = cnn_data_sequence_pre_train(value[4], value[5], seque_len)
+        # valid_data, valid_target = cnn_data_sequence_pre_train(value[4], value[5])
 
         cnn_results[name] = np.append(cnn_results[name], sklearn_acc(model, test_data, test_target))
-        # cnn_results[name] = np.append(cnn_results[name], sklearn_acc(model, train_data, train_target))
+        #nn_results[name] = np.append(cnn_results[name], sklearn_acc(model, train_data, train_target))
         # cnn_results[name] = np.append(cnn_results[name], sklearn_acc(model, valid_data, valid_target))
 
+    print(cnn_results)
     return cnn_results
 
 
@@ -452,11 +471,14 @@ def run_cnn_ann(data_warehouse, order_stocks):
     for stock in cnn_results.keys():
         cnn_results1 = cnn_results[stock].reshape((compiling_iter - 1) * (fitting_iter - 1), 4)
         cnn_results1 = pd.DataFrame(cnn_results1, columns=columns)
+        print(stock)
+        print(cnn_results1.mean())
+        summary_results[stock] = cnn_results1.mean()
         cnn_results1 = cnn_results1.append([cnn_results1.mean(), cnn_results1.max(), cnn_results1.std()],
                                            ignore_index=True)
         cnn_results1.to_csv(join(
             Base_dir,
-            '2D-models/{}/results-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.csv'.format(
+            '2D-models/{}/results1-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.csv'.format(
                 stock,
                 model_param + str(nb_classes) if model_param == "FCN" else model_param,
                 seq_len,
@@ -473,10 +495,11 @@ def run_cnn_ann(data_warehouse, order_stocks):
                 print_metrics()
             )
         ), index=False)
-        summary_results[stock] = cnn_results1.mean()
 
     base_results = load_base_results()
     df_summary_results = pd.DataFrame.from_dict(summary_results).transpose()
+    print(str(summary_results))
+    print(str(df_summary_results))
     for c in columns:
         create_bar_plot(c, df_summary_results.loc[:, c], base_results.loc[:, c])
 
@@ -484,7 +507,11 @@ def run_cnn_ann(data_warehouse, order_stocks):
 def create_bar_plot(column, summary_results, base_results):
     labels = order_stocks
     summary_means = summary_results
+    print("summary_means")
+    print(str(summary_means))
     base_means = base_results
+    print("base_means")
+    print(str(base_means))
 
     # https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/barchart.html
     x = np.arange(len(labels))  # the label locations
@@ -503,7 +530,7 @@ def create_bar_plot(column, summary_results, base_results):
     fig.tight_layout()
     plt.savefig(join(
         Base_dir,
-        '2D-models/Figures/{}/results-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.png'.format(
+        '2D-models/Figures/{}/results1-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}.png'.format(
             column,
             model_param + str(nb_classes) if model_param == "FCN" else model_param,
             seq_len,
@@ -579,8 +606,8 @@ activation = ""
 optimizer = ""
 loss = ""
 metrics = []
-model_param = "CNNpred-1D"  # CNNpred, FCN, CNN-LSTM, CNNpred-1D
-nb_classes = 3  # param needed when model_param == FCN
+model_param = "LSTM"  # CNNpred, FCN, CNN-LSTM, CNNpred-1D
+nb_classes = 2  # param needed when model_param == FCN
 
 cnn_train_data, cnn_train_target, cnn_test_data, cnn_test_target, cnn_valid_data, cnn_valid_target = ([] for i in
                                                                                                       range(6))
@@ -591,10 +618,10 @@ print('Number of stocks: {}'.format(len(order_stocks))),
 
 run_model_with_params(
     seq_len_parametrized=60,
-    number_filter_parametrized=[8, 8, 8],
-    epochs_parametrized=200,
+    number_filter_parametrized=[8, 16, 8],
+    epochs_parametrized=100,
     batch_size_parametrized=128,
-    compiling_iter_parametrized=6,
+    compiling_iter_parametrized=4,
     fitting_iter_parametrized=2,
     drop_parametrized=0.1,
     activation_parametrized='sigmoid',
