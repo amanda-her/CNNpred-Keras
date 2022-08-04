@@ -14,6 +14,7 @@ from sklearn.metrics import accuracy_score as accuracy, f1_score, mean_absolute_
 
 
 def plot_raw_data(data_array, num_train, num_val, num_time_steps, stock):
+
     train_array = data_array[:num_train]
     val_array = data_array[num_train: (num_train + num_val)]
     test_array = data_array[(num_train + num_val):]
@@ -115,13 +116,15 @@ def create_tf_dataset(
     )
 
     dataset = tf.data.Dataset.zip((inputs, targets))
-    # for batch in dataset:
-    #     inputs, targets = batch
-    #     print(inputs.shape)
-    #     print(targets.shape)
-
-    # print(type(dataset))
-    # print(dataset._variant_tensor)
+    print("---------------")
+    for batch in dataset:
+        inputs, targets = batch
+        print(inputs.shape)
+        print(targets.shape)
+    print("=========================")
+    print(type(dataset))
+    print(dataset._variant_tensor)
+    print("***************************")
 
     return dataset.prefetch(16).cache()
 
@@ -148,22 +151,20 @@ def LSTM_model(
 
     return model
 
-
-def plot_predicted_result(y, y_pred, stock, axes, i):
-    # plt.figure(figsize=(18, 6))
-    axes[i].plot( y[:, 0])
-    axes[i].plot( y_pred[:, 0])
-    axes[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
-    # plt.title(stock)
-    # plt.savefig(stock + "-predict-" + filepath + ".png")
+def plot_predicted_result(y, y_pred, stock):
+    plt.figure(figsize=(18, 6))
+    plt.plot(y[:, 0])
+    plt.plot(y_pred[:, 0])
+    plt.legend(["actual", "forecast"])
+    plt.savefig(stock + "-predict-" + filepath + ".png")
 
 
-def predict(model, test_dataset: np.ndarray, stock, axes, i):
+def predict(model, test_dataset: np.ndarray, stock):
     x_test, y = next(test_dataset.as_numpy_iterator())
     print(x_test.shape)
     y_pred = model.predict(x_test)
     print(y_pred.shape)
-    plot_predicted_result(y, y_pred, stock, axes, i)
+    plot_predicted_result(y, y_pred, stock)
 
     # class_array_y_pred = y_pred[:, 0].astype(int)
     # class_array_y_pred = (array_y_pred[forecast_horizon:]/array_y_pred[:-forecast_horizon]).astype(int)
@@ -182,16 +183,15 @@ def predict(model, test_dataset: np.ndarray, stock, axes, i):
     # DJI range(0,4), all stocks-> [0.43434343434343436, 0.5656565656565656, 0.556793336803748, 0.43434343434343436]
     return metric_results
 
-
 def create_bar_plot(results):
     labels = results.keys()
     print(np.array(list(results.values())))
-    values = np.array(list(results.values()))
+    values=np.array(list(results.values()))
     print(values.shape)
-    summary_means = values[:, 0]
+    summary_means = values[:,0]
     print("summary_means")
     print(str(summary_means))
-    base_means = values[:, 1]
+    base_means = values[:,1]
     print("base_means")
     print(str(base_means))
 
@@ -210,11 +210,10 @@ def create_bar_plot(results):
     ax.set_xticklabels(labels)
     ax.legend()
     fig.tight_layout()
-    plt.savefig("results-" + filepath + ".png")
-
+    plt.savefig("results-"+filepath+".png")
 
 train_size, val_size = 0.6, 0.2
-features = list(range(0, 4))  # +[6,10,14,17,19,31,37,54,61,65]
+features = list(range(0,1))#+[6,10,14,17,19,31,37,54,61,65]
 # features = range(0, 1) #INPUT
 print(features)
 number_feature = len(features)
@@ -236,17 +235,18 @@ filepath = "{}-{}-{}-{}-{}".format(
 data_files_path = "LSTM/Datasets"
 data_files_names = listdir(data_files_path)
 stocks = []
-train_datasets = {}
-val_datasets = {}
-test_datasets = {}
+train_arrays = {}
+val_arrays = {}
+test_arrays = {}
+
 
 for file in data_files_names:
     data = pd.read_csv("LSTM/Datasets/{}".format(file))
     stock = data['Name'][0]
     stocks.append(stock)
     del data["Name"]
-    if number_feature > 1:
-        data.insert(2, "Day", data['Date'].apply(lambda dt_str: datetime.strptime(dt_str, '%Y-%m-%d').weekday()))
+    if number_feature >1:
+        data.insert(2,"Day",data['Date'].apply(lambda dt_str: datetime.strptime(dt_str, '%Y-%m-%d').weekday()))
     print(data.head())
     del data['Date']
     print(data.values.shape)
@@ -259,93 +259,81 @@ for file in data_files_names:
     print(data_array[forecast_horizon:].shape)
     train_array, val_array, test_array = preprocess(data_array[forecast_horizon:], train_size, val_size, stock)
 
-    # class_array = (data_array[forecast_horizon:] / data_array[:-forecast_horizon]).astype(int)
-    # print("class_array.shape")
-    # print(class_array.shape)
-    # train_array_target, val_array_target, test_array_target = preprocess(class_array, train_size, val_size, stock)
+
     train_array_target, val_array_target, test_array_target = train_array, val_array, test_array
+    train_arrays[stock]=train_array
 
-    train_dataset, val_dataset = (
-        create_tf_dataset(data_array, target_array, input_sequence_length, forecast_horizon, batch_size)
-        for (data_array, target_array) in [(train_array, train_array_target), (val_array, val_array_target)]
-    )
-    train_datasets[stock] = train_dataset
-    val_datasets[stock] = val_dataset
+print("TRAIN & VAL")
+train_dataset, val_dataset = (
+    create_tf_dataset(data_array, target_array, input_sequence_length, forecast_horizon, batch_size)
+    for (data_array, target_array) in [(train_array, train_array_target), (val_array, val_array_target)]
+)
+train_datasets[stock]=train_dataset
+val_datasets[stock]=val_dataset
+print("TESTTTT")
+test_dataset = create_tf_dataset(
+    test_array,
+    test_array_target,
+    input_sequence_length,
+    forecast_horizon,
+    batch_size=test_array.shape[0]
+)
+test_datasets[stock] = test_dataset
 
-    test_dataset = create_tf_dataset(
-        test_array,
-        test_array_target,
-        input_sequence_length,
-        forecast_horizon,
-        batch_size=test_array.shape[0]
-    )
-    test_datasets[stock] = test_dataset
 
-results = {}
-print(stocks)
-if add_all_datasets_data:
 
-    x = tf.data.Dataset.from_tensor_slices(train_datasets.values())
-    concat_ds = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
 
-    x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
-    concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
 
-    for b in concat_ds:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    print("--------------")
-    for b in concat_ds1:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    model = LSTM_model(
-        concat_ds,
-        concat_ds1,
-        input_sequence_length,
-        number_feature,
-        epochs
-    )
-
-    fig, axs = plt.subplots(len(stocks), sharex=True, sharey=True, figsize=(16, 16))
-    fig.suptitle('Sharing both axes')
-    i = 0
-    for stock in stocks:
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i)
-        i += 1
-    for ax in axs:
-        ax.label_outer()
-    plt.savefig("predict-" + filepath + ".png")
-
-else:
-
-    fig, axs = plt.subplots(len(stocks), sharex=True, sharey=True, figsize=(16, 16))
-    fig.suptitle('Sharing both axes')
-    i = 0
-
-    for stock in stocks:
-        model = LSTM_model(
-            train_datasets[stock],
-            val_datasets[stock],
-            input_sequence_length,
-            number_feature,
-            epochs
-        )
-
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i)
-        i += 1
-    for ax in axs:
-        ax.label_outer()
-    plt.savefig("predict-" + filepath + ".png")
-
-print("results")
-print(results)
-create_bar_plot(results)
-pd.DataFrame.from_dict(results, orient='index', columns=["MAE", "RMSE"]).to_csv("results-" + filepath + ".csv")
+# results = {}
+# print(stocks)
+# if add_all_datasets_data:
+#
+#     x = tf.data.Dataset.from_tensor_slices(train_datasets.values())
+#     concat_ds = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
+#
+#     x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
+#     concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
+#
+#     for b in concat_ds:
+#         i, t =b
+#         print("input")
+#         print(i.shape)
+#         print("target")
+#         print(t.shape)
+#
+#     print("--------------")
+#     for b in concat_ds1:
+#         i, t =b
+#         print("input")
+#         print(i.shape)
+#         print("target")
+#         print(t.shape)
+#
+#     model = LSTM_model(
+#         concat_ds,
+#         concat_ds1,
+#         input_sequence_length,
+#         number_feature,
+#         epochs
+#     )
+#
+#     for stock in stocks:
+#         results[stock] = predict(model, test_datasets[stock], stock)
+#
+# else:
+#
+#     for stock in stocks:
+#         model = LSTM_model(
+#             train_datasets[stock],
+#             val_datasets[stock],
+#             input_sequence_length,
+#             number_feature,
+#             epochs
+#         )
+#
+#         results[stock] = predict(model, test_datasets[stock], stock)
+#
+# print("results")
+# print(results)
+# create_bar_plot(results)
+# pd.DataFrame.from_dict(results, orient='index', columns=["MAE", "RMSE"]).to_csv("results-"+filepath+".csv")
