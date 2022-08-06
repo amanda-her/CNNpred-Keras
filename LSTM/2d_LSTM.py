@@ -65,7 +65,7 @@ def preprocess(data_array: np.ndarray, train_size: float, val_size: float, stock
     # print(f"validation set size: {val_array.shape}")
     # print(f"test set size: {test_array.shape}")
 
-    return train_array, val_array, test_array
+    return train_array, val_array, test_array, np.array(mean)[0], np.array(std)[0]
 
 
 def create_tf_dataset(
@@ -149,21 +149,24 @@ def LSTM_model(
     return model
 
 
-def plot_predicted_result(y, y_pred, stock, axes, i):
+def plot_predicted_result(y, y_pred, stock, axes, i, mean, std):
     # plt.figure(figsize=(18, 6))
-    axes[i].plot( y[:, 0])
-    axes[i].plot( y_pred[:, 0])
+    axes[i].plot( y[:, 0]*std + mean)
+    axes[i].plot( y_pred[:, 0]*std + mean)
     axes[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
     # plt.title(stock)
     # plt.savefig(stock + "-predict-" + filepath + ".png")
 
 
-def predict(model, test_dataset: np.ndarray, stock, axes, i):
+def predict(model, test_dataset: np.ndarray, stock, axes, i, mean, std):
     x_test, y = next(test_dataset.as_numpy_iterator())
     print(x_test.shape)
     y_pred = model.predict(x_test)
     print(y_pred.shape)
-    plot_predicted_result(y, y_pred, stock, axes, i)
+    print(y.shape)
+    print(mean)
+    print(std)
+    plot_predicted_result(y, y_pred, stock, axes, i, mean, std)
 
     # class_array_y_pred = y_pred[:, 0].astype(int)
     # class_array_y_pred = (array_y_pred[forecast_horizon:]/array_y_pred[:-forecast_horizon]).astype(int)
@@ -222,7 +225,7 @@ print(number_feature)
 batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
-epochs = 200
+epochs = 100
 add_all_datasets_data = True
 
 filepath = "{}-{}-{}-{}-{}".format(
@@ -239,6 +242,8 @@ stocks = []
 train_datasets = {}
 val_datasets = {}
 test_datasets = {}
+means = {}
+stds = {}
 
 for file in data_files_names:
     data = pd.read_csv("LSTM/Datasets/{}".format(file))
@@ -257,7 +262,7 @@ for file in data_files_names:
     print(data_array[:, 0])
     print("data_array[forecast_horizon:].shape")
     print(data_array[forecast_horizon:].shape)
-    train_array, val_array, test_array = preprocess(data_array[forecast_horizon:], train_size, val_size, stock)
+    train_array, val_array, test_array, means[stock], stds[stock] = preprocess(data_array[forecast_horizon:], train_size, val_size, stock)
 
     # class_array = (data_array[forecast_horizon:] / data_array[:-forecast_horizon]).astype(int)
     # print("class_array.shape")
@@ -314,11 +319,11 @@ if add_all_datasets_data:
         epochs
     )
 
-    fig, axs = plt.subplots(len(stocks), sharex=True, sharey=True, figsize=(16, 16))
+    fig, axs = plt.subplots(len(stocks), sharex=True,  figsize=(16, 16))
     fig.suptitle('Sharing both axes')
     i = 0
     for stock in stocks:
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i)
+        results[stock] = predict(model, test_datasets[stock], stock, axs, i, means[stock], stds[stock])
         i += 1
     for ax in axs:
         ax.label_outer()
@@ -326,7 +331,7 @@ if add_all_datasets_data:
 
 else:
 
-    fig, axs = plt.subplots(len(stocks), sharex=True, sharey=True, figsize=(16, 16))
+    fig, axs = plt.subplots(len(stocks), sharex=True,  figsize=(16, 16))
     fig.suptitle('Sharing both axes')
     i = 0
 
@@ -339,7 +344,7 @@ else:
             epochs
         )
 
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i)
+        results[stock] = predict(model, test_datasets[stock], stock, axs, i, means[stock], stds[stock])
         i += 1
     for ax in axs:
         ax.label_outer()

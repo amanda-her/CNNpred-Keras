@@ -6,7 +6,7 @@ import pandas as pd
 import tensorflow as tf
 from datetime import datetime
 from keras import backend
-from keras.layers import Dense, LSTM
+from keras.layers import Dense, LSTM, RepeatVector, TimeDistributed, Conv1D, MaxPool1D
 from keras.models import Sequential
 from keras.utils import timeseries_dataset_from_array
 from keras.utils.vis_utils import plot_model
@@ -25,7 +25,7 @@ def plot_raw_data(data_array, num_train, num_val, num_time_steps, stock):
     plt.plot(range((num_train + num_val), num_time_steps), test_array[:, 0])
     plt.legend(["train", "validation", "test"])
     plt.title(stock)
-    plt.savefig("{}-raw-data.png".format(stock))
+    plt.savefig("TEST-{}-raw-data.png".format(stock))
 
     return
 
@@ -66,39 +66,19 @@ def preprocess(data_array: np.ndarray, train_size: float, val_size: float, stock
     # print(f"validation set size: {val_array.shape}")
     # print(f"test set size: {test_array.shape}")
 
-    return train_array, val_array, test_array
+    return train_array, val_array, test_array, mean, std
 
 
 def create_tf_dataset(
         input_array: np.ndarray,
-        target_array: np.ndarray,
         input_sequence_length: int,
         forecast_horizon: int,
         batch_size: int = 128
 ):
-    """Creates tensorflow dataset from numpy array.
-
-    This function creates a dataset where each element is a tuple `(inputs, targets)`.
-    `inputs` is a Tensor
-    of shape `(batch_size, input_sequence_length, num_routes, 1)` containing
-    the `input_sequence_length` past values of the timeseries for each node.
-    `targets` is a Tensor of shape `(batch_size, forecast_horizon, num_routes)`
-    containing the `forecast_horizon`
-    future values of the timeseries for each node.
-
-    Args:
-        data_array: np.ndarray with shape `(num_time_steps, num_routes)`
-        input_sequence_length: Length of the input sequence (in number of timesteps).
-        forecast_horizon: If `multi_horizon=True`, the target will be the values of the timeseries for 1 to
-            `forecast_horizon` timesteps ahead. If `multi_horizon=False`, the target will be the value of the
-            timeseries `forecast_horizon` steps ahead (only one value).
-        batch_size: Number of timeseries samples in each batch.
-        multi_horizon: See `forecast_horizon`.
-
-    Returns:
-        A tf.data.Dataset instance.
-    """
-
+    print("input_array.shape")
+    print(input_array.shape)
+    print("input_array[:-forecast_horizon].shape")
+    print(input_array[:-forecast_horizon].shape)
     inputs = timeseries_dataset_from_array(
         input_array[:-forecast_horizon],
         None,
@@ -107,8 +87,10 @@ def create_tf_dataset(
         batch_size=batch_size,
     )
 
+    print("input_array[input_sequence_length:].shape")
+    print(input_array[input_sequence_length:].shape)
     targets = timeseries_dataset_from_array(
-        (target_array[input_sequence_length:])[:, 0],
+        input_array[input_sequence_length:],
         None,
         sequence_length=1,
         shuffle=False,
@@ -138,60 +120,101 @@ def LSTM_model(
 ):
     backend.clear_session()
     model = Sequential()
-    model.add(LSTM(64, input_shape=(input_sequence_length, number_feature)))
-    # model.add(LSTM(64, input_shape=(input_sequence_length, number_feature), return_sequences=True))
-    # model.add(LSTM(64, return_sequences=True))
-    # model.add(LSTM(32))
-    model.add(Dense(1))
+    model.add(LSTM(128, input_shape=(input_sequence_length, number_feature)))
+    model.add(Dense(number_feature))
     model.summary()
-    plot_model(model, to_file='LSTM-{}feature.png'.format(number_feature), show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file='{}-{}feature.png'.format(model_input, number_feature), show_shapes=True, show_layer_names=True)
 
     model.compile(loss='mae', optimizer='adam')
     model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
 
     return model
 
-def plot_predicted_result(y, y_pred, stock):
-    plt.figure(figsize=(18, 6))
-    plt.plot(y[:, 0])
-    plt.plot(y_pred[:, 0])
-    plt.legend(["actual", "forecast"])
-    plt.savefig(stock + "-predict-" + filepath + ".png")
+def CNN_LSTM_model(
+        train_dataset: np.ndarray,
+        val_dataset: np.ndarray,
+        input_sequence_length: int,
+        number_feature: int,
+        epochs: int
+):
+    backend.clear_session()
+    model = Sequential()
+    model.add(Conv1D(64, kernel_size=1, input_shape=(input_sequence_length, number_feature)))
+    model.add(MaxPool1D(pool_size=1))
+    model.add(LSTM(100, return_sequences=True))
+    model.add(LSTM(100))
+    model.add(Dense(number_feature))
+    model.summary()
+    plot_model(model, to_file='{}-{}feature.png'.format(model_input, number_feature), show_shapes=True, show_layer_names=True)
+
+    model.compile(loss='mae', optimizer='adam')
+    model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
+
+    return model
+
+def plot_predicted_result(y, y_pred, stock, axes, i, mean, std, train, val):
+    # plt.figure(figsize=(18, 6))
+    train_len=len(train)
+    val_len=len(val)
+    test_len=len(y)
+    print("train_len")
+    print(train_len)
+    print("val_len")
+    print(test_len)
+    print("test_len")
+    print(test_len)
+    axes[i].plot( range(0, train_len), train*std+mean, color="#1f77b4", label="{} train".format(stock))
+    axes[i].plot(range(train_len, train_len+val_len), val*std+mean, color="#1f77b4")
+    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len),  y*std+mean, color="#ff7f0e", label="{} test".format(stock))
+    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len), y_pred*std+mean, color="#2ca02c", label="{} predict".format(stock))
+    axes[i].legend()
+    # plt.title(stock)
+    # plt.savefig(stock + "-predict-" + filepath + ".png")
 
 
-def predict(model, test_dataset: np.ndarray, stock):
+def predict(model, test_dataset: np.ndarray, means, stds, train_array, val_array):
     x_test, y = next(test_dataset.as_numpy_iterator())
     print(x_test.shape)
+    print(y.shape)
     y_pred = model.predict(x_test)
     print(y_pred.shape)
-    plot_predicted_result(y, y_pred, stock)
+    # plot_predicted_result(y, y_pred, stock)
 
-    # class_array_y_pred = y_pred[:, 0].astype(int)
-    # class_array_y_pred = (array_y_pred[forecast_horizon:]/array_y_pred[:-forecast_horizon]).astype(int)
-    test = y[:, 0]
-    test_pred = y_pred[:, 0]
-    metric_results = [mae(test_pred, test), np.sqrt(mse(test_pred, test))]
-    # metric_results= metric_results+ [accuracy(test_pred, test), f1_score(test_pred, test, average='macro')]
+
+    test = np.squeeze(y)
+    test_pred = np.squeeze(y_pred)
+    print(test.shape)
+    print(test_pred.shape)
+    print(test_pred)
+    print(test_pred[:,4])
+
+
+    metric_results=[]
+    fig, axs = plt.subplots(len(stocks), sharex=True,  figsize=(16, 16))
+    fig.suptitle('Sharing both axes')
+    for i in range(0,5):
+        print(i)
+        print(test[:,i])
+        print(test_pred[:,i])
+        plot_predicted_result(test[:,i], test_pred[:,i], stocks[i], axs, i, means[i], stds[i], train_array[:,i], val_array[:,i])
+        print(abs((test[:, i]-test_pred[:,i])).mean())
+        metric_results.append([mae(test_pred[:,i], test[:,i]), np.sqrt(mse(test_pred[:,i], test[:,i]))])
+    for ax in axs:
+        ax.label_outer()
+    plt.savefig("predict-" + filepath + ".png")
+
+
+
     print("metric_results")
     print(metric_results)
-    # DJI sin factor-> naive MAE: 0.0021673174502306954, model MAE: 0.060806224362133544
-    # DJI range(1,10)-> naive MAE: 0.0021673174502306954, model MAE: 0.16460517128944463
-    # DJI range(1,5)-> naive MAE: naive MAE: 0.0021673174502306954, model MAE: 0.2585225251668954
-    # DJI range(0,1), all stocks-> nnaive MAE: 0.0021673174502306954, model MAE: 0.028034593440144702
-    # DJI range(0,4), all stocks-> naive MAE: 0.0021673174502306954, model MAE: 0.05332288445767822
-    # DJI range(0,1), all stocks-> [0.48148148148148145, 0.5185185185185185, 0.5105053881173285, 0.48148148148148145]
-    # DJI range(0,4), all stocks-> [0.43434343434343436, 0.5656565656565656, 0.556793336803748, 0.43434343434343436]
     return metric_results
 
 def create_bar_plot(results):
-    labels = results.keys()
-    print(np.array(list(results.values())))
-    values=np.array(list(results.values()))
-    print(values.shape)
-    summary_means = values[:,0]
+    labels = stocks
+    summary_means = results[:,0]
     print("summary_means")
     print(str(summary_means))
-    base_means = values[:,1]
+    base_means = results[:,1]
     print("base_means")
     print(str(base_means))
 
@@ -204,7 +227,7 @@ def create_bar_plot(results):
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     print(summary_means + base_means)
-    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.1, 0.1))
+    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.4, 0.4))
     # ax.set_title('Scores by group and gender')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -213,41 +236,38 @@ def create_bar_plot(results):
     plt.savefig("results-"+filepath+".png")
 
 train_size, val_size = 0.6, 0.2
-features = list(range(0,1))#+[6,10,14,17,19,31,37,54,61,65]
-# features = range(0, 1) #INPUT
-print(features)
-number_feature = len(features)
-print(number_feature)
+features = [0]
+number_feature = 5
 batch_size = 128
-input_sequence_length = 60
+input_sequence_length = 10
 forecast_horizon = 1
-epochs = 200
-add_all_datasets_data = True
+epochs = 100
+model_input="LSTM" #LSTM
 
-filepath = "{}-{}-{}-{}-{}".format(
+filepath = "DIFF-{}-{}-{}-{}-{}-".format(
+    model_input,
     input_sequence_length,
     number_feature,
     epochs,
-    batch_size,
-    add_all_datasets_data
+    batch_size
 )
 
 data_files_path = "LSTM/Datasets"
 data_files_names = listdir(data_files_path)
 stocks = []
-train_arrays = {}
-val_arrays = {}
-test_arrays = {}
+train_arrays = []
+val_arrays = []
+test_arrays = []
+means = []
+stds = []
 
-
+i=0
 for file in data_files_names:
     data = pd.read_csv("LSTM/Datasets/{}".format(file))
     stock = data['Name'][0]
+    print(stock)
     stocks.append(stock)
     del data["Name"]
-    if number_feature >1:
-        data.insert(2,"Day",data['Date'].apply(lambda dt_str: datetime.strptime(dt_str, '%Y-%m-%d').weekday()))
-    print(data.head())
     del data['Date']
     print(data.values.shape)
     data_array = data.values[:, features]
@@ -257,83 +277,59 @@ for file in data_files_names:
     print(data_array[:, 0])
     print("data_array[forecast_horizon:].shape")
     print(data_array[forecast_horizon:].shape)
-    train_array, val_array, test_array = preprocess(data_array[forecast_horizon:], train_size, val_size, stock)
+    train_array, val_array, test_array, mean, std = preprocess(data_array[forecast_horizon:], train_size, val_size, stock)
+    means.append(mean)
+    stds.append(std)
+    train_arrays.append(train_array)
+    val_arrays.append(val_array)
+    test_arrays.append(test_array)
+    print(train_array.shape)
+    print(train_array)
 
 
-    train_array_target, val_array_target, test_array_target = train_array, val_array, test_array
-    train_arrays[stock]=train_array
+train_array=np.squeeze(np.array(train_arrays).T)
+print(train_array.shape)
+print(train_array)
+val_array=np.squeeze(np.array(val_arrays).T)
+print(val_array.shape)
+test_array=np.squeeze(np.array(test_arrays).T)
+print(test_array.shape)
 
 print("TRAIN & VAL")
 train_dataset, val_dataset = (
-    create_tf_dataset(data_array, target_array, input_sequence_length, forecast_horizon, batch_size)
-    for (data_array, target_array) in [(train_array, train_array_target), (val_array, val_array_target)]
+    create_tf_dataset(data_array, input_sequence_length, forecast_horizon, batch_size)
+    for data_array in [train_array, val_array]
 )
-train_datasets[stock]=train_dataset
-val_datasets[stock]=val_dataset
-print("TESTTTT")
+
 test_dataset = create_tf_dataset(
     test_array,
-    test_array_target,
     input_sequence_length,
     forecast_horizon,
     batch_size=test_array.shape[0]
 )
-test_datasets[stock] = test_dataset
 
+results = {}
+if model_input=="CNN-LSTM":
+    model = CNN_LSTM_model(
+        train_dataset,
+        val_dataset,
+        input_sequence_length,
+        number_feature,
+        epochs
+    )
+else:
+    model = LSTM_model(
+        train_dataset,
+        val_dataset,
+        input_sequence_length,
+        number_feature,
+        epochs
+    )
 
+results = predict(model, test_dataset, means, stds, train_array, val_array)
 
-
-
-# results = {}
-# print(stocks)
-# if add_all_datasets_data:
-#
-#     x = tf.data.Dataset.from_tensor_slices(train_datasets.values())
-#     concat_ds = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
-#
-#     x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
-#     concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
-#
-#     for b in concat_ds:
-#         i, t =b
-#         print("input")
-#         print(i.shape)
-#         print("target")
-#         print(t.shape)
-#
-#     print("--------------")
-#     for b in concat_ds1:
-#         i, t =b
-#         print("input")
-#         print(i.shape)
-#         print("target")
-#         print(t.shape)
-#
-#     model = LSTM_model(
-#         concat_ds,
-#         concat_ds1,
-#         input_sequence_length,
-#         number_feature,
-#         epochs
-#     )
-#
-#     for stock in stocks:
-#         results[stock] = predict(model, test_datasets[stock], stock)
-#
-# else:
-#
-#     for stock in stocks:
-#         model = LSTM_model(
-#             train_datasets[stock],
-#             val_datasets[stock],
-#             input_sequence_length,
-#             number_feature,
-#             epochs
-#         )
-#
-#         results[stock] = predict(model, test_datasets[stock], stock)
-#
-# print("results")
-# print(results)
-# create_bar_plot(results)
-# pd.DataFrame.from_dict(results, orient='index', columns=["MAE", "RMSE"]).to_csv("results-"+filepath+".csv")
+print("results")
+print(results)
+create_bar_plot(np.array(results))
+x=np.append(np.array(stocks)[..., None], np.array(results), axis=1)
+pd.DataFrame(x,  columns=["stock", "MAE", "RMSE"]).to_csv("results-"+filepath+".csv", index=False)
