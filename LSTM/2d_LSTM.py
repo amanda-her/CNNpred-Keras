@@ -50,22 +50,22 @@ def preprocess(data_array: np.ndarray, train_size: float, val_size: float, stock
     )
     # plot_raw_data(data_array, num_train, num_val, num_time_steps, stock)
     train_array = data_array[:num_train]
-    mean = train_array.mean(axis=0)
-    std = train_array.std(axis=0)
+    min = train_array.min(axis=0)
+    max = train_array.max(axis=0)
     print(stock)
-    print(mean)
-    print(std)
+    print(min)
+    print(max)
 
-    train_array = (train_array - mean) / std
-    val_array = (data_array[num_train: (num_train + num_val)] - mean) / std
-    test_array = (data_array[(num_train + num_val):] - mean) / std
+    train_array = (train_array - min) / (max-min)
+    val_array = (data_array[num_train: (num_train + num_val)] - min) / (max-min)
+    test_array = (data_array[(num_train + num_val):] - min) / (max-min)
 
     # print(stock)
     # print(f"train set size: {train_array.shape}")
     # print(f"validation set size: {val_array.shape}")
     # print(f"test set size: {test_array.shape}")
 
-    return train_array, val_array, test_array, np.array(mean)[0], np.array(std)[0]
+    return train_array, val_array, test_array, np.array(min)[0], np.array(max)[0]
 
 
 def create_tf_dataset(
@@ -151,8 +151,8 @@ def LSTM_model(
 
 def plot_predicted_result(y, y_pred, stock, axes, i, mean, std):
     # plt.figure(figsize=(18, 6))
-    axes[i].plot( y[:, 0]*std + mean)
-    axes[i].plot( y_pred[:, 0]*std + mean)
+    axes[i].plot( y[:, 0]*(std-mean)+mean)
+    axes[i].plot( y_pred[:, 0]*(std-mean)+mean)
     axes[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
     # plt.title(stock)
     # plt.savefig(stock + "-predict-" + filepath + ".png")
@@ -202,12 +202,13 @@ def create_bar_plot(results):
     x = np.arange(len(labels))  # the label locations
     width = 0.35  # the width of the bars
     fig, ax = plt.subplots()
-    ax.bar(x - width / 2, summary_means, width, label='MAE')
-    ax.bar(x + width / 2, base_means, width, label='RMSE')
+    ax.grid(True, axis='y', zorder=0)
+    ax.bar(x - width / 2, summary_means, width, label='MAE', zorder=10)
+    ax.bar(x + width / 2, base_means, width, label='RMSE', zorder=10)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     print(summary_means + base_means)
-    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.1, 0.1))
+    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.005, 0.005))
     # ax.set_title('Scores by group and gender')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -217,7 +218,7 @@ def create_bar_plot(results):
 
 
 train_size, val_size = 0.6, 0.2
-features = list(range(0, 4))  # +[6,10,14,17,19,31,37,54,61,65]
+features = list(range(0, 1))  # +[6,10,14,17,19,31,37,54,61,65]
 # features = range(0, 1) #INPUT
 print(features)
 number_feature = len(features)
@@ -225,8 +226,8 @@ print(number_feature)
 batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
-epochs = 100
-add_all_datasets_data = True
+epochs = 500
+add_all_datasets_data = False
 
 filepath = "{}-{}-{}-{}-{}".format(
     input_sequence_length,

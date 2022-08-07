@@ -51,22 +51,22 @@ def preprocess(data_array: np.ndarray, train_size: float, val_size: float, stock
     )
     # plot_raw_data(data_array, num_train, num_val, num_time_steps, stock)
     train_array = data_array[:num_train]
-    mean = train_array.mean(axis=0)
-    std = train_array.std(axis=0)
+    min = train_array.min(axis=0)
+    max = train_array.max(axis=0)
     print(stock)
-    print(mean)
-    print(std)
+    print(min)
+    print(max)
 
-    train_array = (train_array - mean) / std
-    val_array = (data_array[num_train: (num_train + num_val)] - mean) / std
-    test_array = (data_array[(num_train + num_val):] - mean) / std
+    train_array = (train_array - min) / (max-min)
+    val_array = (data_array[num_train: (num_train + num_val)] - min) / (max-min)
+    test_array = (data_array[(num_train + num_val):] - min) / (max-min)
 
     # print(stock)
     # print(f"train set size: {train_array.shape}")
     # print(f"validation set size: {val_array.shape}")
     # print(f"test set size: {test_array.shape}")
 
-    return train_array, val_array, test_array, mean, std
+    return train_array, val_array, test_array, min, max
 
 
 def create_tf_dataset(
@@ -163,10 +163,10 @@ def plot_predicted_result(y, y_pred, stock, axes, i, mean, std, train, val):
     print(test_len)
     print("test_len")
     print(test_len)
-    axes[i].plot( range(0, train_len), train*std+mean, color="#1f77b4", label="{} train".format(stock))
-    axes[i].plot(range(train_len, train_len+val_len), val*std+mean, color="#1f77b4")
-    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len),  y*std+mean, color="#ff7f0e", label="{} test".format(stock))
-    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len), y_pred*std+mean, color="#2ca02c", label="{} predict".format(stock))
+    axes[i].plot( range(0, train_len), train*(std-mean)+mean, color="#1f77b4", label="{} train".format(stock))
+    axes[i].plot(range(train_len, train_len+val_len), val*(std-mean)+mean, color="#1f77b4")
+    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len),  y*(std-mean)+mean, color="#ff7f0e", label="{} test".format(stock))
+    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len), y_pred*(std-mean)+mean, color="#2ca02c", label="{} predict".format(stock))
     axes[i].legend()
     # plt.title(stock)
     # plt.savefig(stock + "-predict-" + filepath + ".png")
