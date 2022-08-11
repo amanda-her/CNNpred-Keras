@@ -120,7 +120,7 @@ def LSTM_model(
 ):
     backend.clear_session()
     model = Sequential()
-    model.add(LSTM(128, input_shape=(input_sequence_length, number_feature)))
+    model.add(LSTM(256, input_shape=(input_sequence_length, number_feature)))
     model.add(Dense(number_feature))
     model.summary()
     plot_model(model, to_file='{}-{}feature.png'.format(model_input, number_feature), show_shapes=True, show_layer_names=True)
@@ -139,10 +139,11 @@ def CNN_LSTM_model(
 ):
     backend.clear_session()
     model = Sequential()
-    model.add(Conv1D(64, kernel_size=1, input_shape=(input_sequence_length, number_feature)))
-    model.add(MaxPool1D(pool_size=1))
-    model.add(LSTM(100, return_sequences=True))
-    model.add(LSTM(100))
+    model.add(Conv1D(64, kernel_size=8, input_shape=(input_sequence_length, number_feature)))
+    # model.add(MaxPool1D(pool_size=1))
+    # model.add(LSTM(100, return_sequences=True))
+    model.add(LSTM(256))
+    #[0.06408113 0.03735174 0.12168183 0.11886682 0.13599887] 3,256
     model.add(Dense(number_feature))
     model.summary()
     plot_model(model, to_file='{}-{}feature.png'.format(model_input, number_feature), show_shapes=True, show_layer_names=True)
@@ -152,21 +153,10 @@ def CNN_LSTM_model(
 
     return model
 
-def plot_predicted_result(y, y_pred, stock, axes, i, mean, std, train, val):
+def plot_predicted_result(y, y_pred, stock, axes, i, mean, std):
     # plt.figure(figsize=(18, 6))
-    train_len=len(train)
-    val_len=len(val)
-    test_len=len(y)
-    print("train_len")
-    print(train_len)
-    print("val_len")
-    print(test_len)
-    print("test_len")
-    print(test_len)
-    axes[i].plot( range(0, train_len), train*(std-mean)+mean, color="#1f77b4", label="{} train".format(stock))
-    axes[i].plot(range(train_len, train_len+val_len), val*(std-mean)+mean, color="#1f77b4")
-    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len),  y*(std-mean)+mean, color="#ff7f0e", label="{} test".format(stock))
-    axes[i].plot(range(train_len+val_len, train_len+val_len+test_len), y_pred*(std-mean)+mean, color="#2ca02c", label="{} predict".format(stock))
+    axes[i].plot(y*(std-mean)+mean, label="{} actual".format(stock))
+    axes[i].plot(y_pred*(std-mean)+mean,  label="{} forecast".format(stock))
     axes[i].legend()
     # plt.title(stock)
     # plt.savefig(stock + "-predict-" + filepath + ".png")
@@ -196,7 +186,7 @@ def predict(model, test_dataset: np.ndarray, means, stds, train_array, val_array
         print(i)
         print(test[:,i])
         print(test_pred[:,i])
-        plot_predicted_result(test[:,i], test_pred[:,i], stocks[i], axs, i, means[i], stds[i], train_array[:,i], val_array[:,i])
+        plot_predicted_result(test[:,i], test_pred[:,i], stocks[i], axs, i, means[i], stds[i])
         print(abs((test[:, i]-test_pred[:,i])).mean())
         metric_results.append([mae(test_pred[:,i], test[:,i]), np.sqrt(mse(test_pred[:,i], test[:,i]))])
     for ax in axs:
@@ -222,12 +212,13 @@ def create_bar_plot(results):
     x = np.arange(len(labels))  # the label locations
     width = 0.35  # the width of the bars
     fig, ax = plt.subplots()
-    ax.bar(x - width / 2, summary_means, width, label='MAE')
-    ax.bar(x + width / 2, base_means, width, label='RMSE')
+    ax.grid(True, axis='y', zorder=0)
+    ax.bar(x - width / 2, summary_means, width, label='MAE', zorder=10)
+    ax.bar(x + width / 2, base_means, width, label='RMSE', zorder=10)
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     print(summary_means + base_means)
-    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.4, 0.4))
+    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.05, 0.05))
     # ax.set_title('Scores by group and gender')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -241,7 +232,7 @@ number_feature = 5
 batch_size = 128
 input_sequence_length = 10
 forecast_horizon = 1
-epochs = 100
+epochs = 50
 model_input="LSTM" #LSTM
 
 filepath = "DIFF-{}-{}-{}-{}-{}-".format(
@@ -285,6 +276,7 @@ for file in data_files_names:
     test_arrays.append(test_array)
     print(train_array.shape)
     print(train_array)
+    i+=1
 
 
 train_array=np.squeeze(np.array(train_arrays).T)

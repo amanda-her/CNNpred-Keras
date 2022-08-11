@@ -55,6 +55,7 @@ def preprocess(data_array: np.ndarray, train_size: float, val_size: float, stock
     print(stock)
     print(min)
     print(max)
+    print(data_array[:24])
 
     train_array = (train_array - min) / (max-min)
     val_array = (data_array[num_train: (num_train + num_val)] - min) / (max-min)
@@ -135,7 +136,7 @@ def LSTM_model(
 ):
     backend.clear_session()
     model = Sequential()
-    model.add(LSTM(64, input_shape=(input_sequence_length, number_feature)))
+    model.add(LSTM(units, input_shape=(input_sequence_length, number_feature)))
     # model.add(LSTM(64, input_shape=(input_sequence_length, number_feature), return_sequences=True))
     # model.add(LSTM(64, return_sequences=True))
     # model.add(LSTM(32))
@@ -208,7 +209,7 @@ def create_bar_plot(results):
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     print(summary_means + base_means)
-    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.005, 0.005))
+    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.05, 0.05))
     # ax.set_title('Scores by group and gender')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
@@ -218,7 +219,7 @@ def create_bar_plot(results):
 
 
 train_size, val_size = 0.6, 0.2
-features = list(range(0, 1))  # +[6,10,14,17,19,31,37,54,61,65]
+features = list(range(0, 83)) #+ list(range(40, 70))# +[6,10,14,17,19,31,37,54,61,65]
 # features = range(0, 1) #INPUT
 print(features)
 number_feature = len(features)
@@ -226,15 +227,17 @@ print(number_feature)
 batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
-epochs = 500
-add_all_datasets_data = False
+epochs = 300
+add_all_datasets_data = True
+units=512
 
-filepath = "{}-{}-{}-{}-{}".format(
+filepath = "{}-{}-{}-{}-{}-{}".format(
     input_sequence_length,
     number_feature,
     epochs,
     batch_size,
-    add_all_datasets_data
+    add_all_datasets_data,
+    units
 )
 
 data_files_path = "LSTM/Datasets"
@@ -259,6 +262,7 @@ for file in data_files_names:
     data_array = data.values[:, features]
     print(data_array.shape)
     data_array = data_array[200:]
+    data_array=np.nan_to_num(data_array)
     print(data_array.shape)
     print(data_array[:, 0])
     print("data_array[forecast_horizon:].shape")
