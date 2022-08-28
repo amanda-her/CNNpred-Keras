@@ -7,8 +7,8 @@ import pandas as pd
 import tensorflow as tf
 from datetime import datetime
 from keras import backend
-from keras.layers import Dense, LSTM, Conv1D, MaxPool1D, Flatten, Dropout
-from keras.models import Sequential
+from keras.layers import Dense, LSTM, Conv1D, MaxPool1D, Flatten, Dropout, Input, Permute, BatchNormalization, GlobalAveragePooling1D, concatenate, Activation
+from keras.models import Sequential, Model
 from keras.utils import timeseries_dataset_from_array
 from keras.utils.vis_utils import plot_model
 from sklearn.metrics import accuracy_score as accuracy, f1_score, mean_absolute_error as mae, mean_squared_error as mse
@@ -126,6 +126,65 @@ def create_tf_dataset(
     # print(dataset._variant_tensor)
 
     return dataset.prefetch(16).cache()
+
+def FCN_LSTM_model(
+        train_dataset: np.ndarray,
+        val_dataset: np.ndarray,
+        input_sequence_length: int,
+        number_feature: int,
+        epochs: int
+):
+    input_shape = (input_sequence_length, number_feature)
+    input_layer = Input(input_shape)
+
+    # perm_layer = Permute((2, 1))(input_layer)
+    lstm_layer = LSTM(128)(input_layer)
+    lstm_layer = Dense(8)(lstm_layer)
+    # lstm_layer = Dropout(0.8)(lstm_layer)
+
+    conv1 = Conv1D(filters=128, kernel_size=8, padding='same')(input_layer)
+    conv1 = BatchNormalization()(conv1)
+    # conv1 = Activation(activation='relu')(conv1)
+
+    conv2 = Conv1D(filters=256, kernel_size=5, padding='same')(conv1)
+    conv2 = BatchNormalization()(conv2)
+    # conv2 = Activation('relu')(conv2)
+
+    conv3 = Conv1D(128, kernel_size=3, padding='same')(conv2)
+    conv3 = BatchNormalization()(conv3)
+    # conv3 = Activation('relu')(conv3)
+
+    gap_layer = GlobalAveragePooling1D()(conv3)
+
+    gap_layer = Dense(8)(gap_layer)
+
+
+    concat = concatenate([gap_layer, lstm_layer])
+
+
+    output_layer = Dense(1)(concat)
+
+    model = Model(inputs=input_layer, outputs=output_layer)
+    plot_model(model, to_file='{}-{},{}-{}feature.png'.format(model_input, filter, units, number_feature),
+               show_shapes=True, show_layer_names=True)
+
+    model.compile(loss='mae', optimizer='adam')
+    history = model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
+
+    # list all data in history
+    print(history.history.keys())
+    # summarize history for loss
+    # pl.figure(2)
+    plt.figure(global_stock)
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.savefig("Loss-{}-{}.png".format(filepath, global_stock))
+
+    return model
 
 def CNN_LSTM_model(
         train_dataset: np.ndarray,
@@ -302,11 +361,11 @@ input_sequence_length = 60
 forecast_horizon = 1
 epochs = 200
 add_all_datasets_data = True
-model_input="CNNpred" #CNNpred, CNN-LSTM
+model_input="FCN-LSTM" #CNNpred, CNN-LSTM
 filter=128
 units=128
 
-filepath = "{}-{}-{}-{}-{}-{}-{}-{}".format(
+filepath = "{}-{}-{}-{}-{}-{}-{}-{}-32,16".format(
     model_input,
     input_sequence_length,
     number_feature,
@@ -406,8 +465,18 @@ if add_all_datasets_data:
             epochs
         )
 
-    else:
+
+    elif model_input == "CNNpred":
         model = CNNpred_model(
+            concat_ds,
+            concat_ds1,
+            input_sequence_length,
+            number_feature,
+            epochs
+        )
+
+    else:
+        model = FCN_LSTM_model(
             concat_ds,
             concat_ds1,
             input_sequence_length,
@@ -417,7 +486,6 @@ if add_all_datasets_data:
 
 
     for stock in stocks:
-        global_stock = stock
         results[stock], y[stock], y_pred[stock] = predict(model, test_datasets[stock])
 
     plot_predicted_result(y, y_pred, means, stds)
@@ -426,6 +494,7 @@ else:
 
 
     for stock in stocks:
+        global_stock = stock
         if model_input == "CNN-LSTM":
             model = CNN_LSTM_model(
                 train_datasets[stock],
@@ -435,7 +504,7 @@ else:
                 epochs
             )
 
-        else:
+        elif model_input=="CNNpred":
             model = CNNpred_model(
                 train_datasets[stock],
                 val_datasets[stock],
@@ -444,7 +513,14 @@ else:
                 epochs
             )
 
-        global_stock = stock
+        else:
+            model = FCN_LSTM_model(
+                train_datasets[stock],
+                val_datasets[stock],
+                input_sequence_length,
+                number_feature,
+                epochs
+            )
         results[stock], y[stock], y_pred[stock]  = predict(model, test_datasets[stock])
 
     plot_predicted_result(y, y_pred, means, stds)
