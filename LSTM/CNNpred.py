@@ -165,7 +165,7 @@ def FCN_LSTM_model(
     output_layer = Dense(1)(concat)
 
     model = Model(inputs=input_layer, outputs=output_layer)
-    plot_model(model, to_file='{}-{},{}-{}feature.png'.format(model_input, filter, units, number_feature),
+    plot_model(model, to_file='11{}-{},{}-{}feature.png'.format(model_input, filter, units, number_feature),
                show_shapes=True, show_layer_names=True)
 
     model.compile(loss='mae', optimizer='adam')
@@ -202,7 +202,7 @@ def CNN_LSTM_model(
     #[0.06408113 0.03735174 0.12168183 0.11886682 0.13599887] 3,256
     model.add(Dense(1))
     model.summary()
-    plot_model(model, to_file='{}-{},{}-{}feature.png'.format(model_input, filter, units,number_feature), show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file='11{}-{},{}-{}feature.png'.format(model_input, filter, units,number_feature), show_shapes=True, show_layer_names=True)
 
     model.compile(loss='mae', optimizer='adam')
     history = model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
@@ -236,17 +236,18 @@ def CNNpred_model(
     model = Sequential()
     # layer 1
     model.add(
-        Conv1D(8, 1,  input_shape=(input_sequence_length, number_feature))
+        Conv1D(128, 3,  input_shape=(input_sequence_length, number_feature))
     )
+    model.add(MaxPool1D())
     # layer 2
     model.add(Conv1D(8, 3))
     model.add(MaxPool1D())
-    # layer 3
-    model.add(Conv1D(8, 3))
-    model.add(MaxPool1D())
-
+    # # layer 3
+    # model.add(Conv1D(8, 3))
+    # model.add(MaxPool1D())
+    #
     model.add(Flatten())
-    model.add(Dropout(0.1))
+    # model.add(Dropout(0.1))
 
     model.add(Dense(1))
     print(model.summary())
@@ -267,20 +268,27 @@ def CNNpred_model(
     return model
 
 
-def plot_predicted_result(y, y_pred, mean, std):
+def plot_predicted_result(y_cache, y_pred_all, stock, axes, i, mean, std):
+    # plt.figure(figsize=(18, 6))
 
-    for stock in stocks:
-        results[stock], y[stock], y_pred[stock] = predict(model, test_datasets[stock])
+    y_pred = np.array(y_pred_all).mean(axis=0)
+    print("y_pred")
+    print(y_pred)
+    axes[i].plot(y_cache * (std - mean) + mean)
+    axes[i].plot(y_pred * (std - mean) + mean)
+    axes[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
+    # plt.title(stock)
+    # plt.savefig(stock + "-predict-" + filepath + ".png")
 
+
+def create_predicted_results_plot(test_datasets, y_pred, stocks, means, stds):
     fig, axs = plt.subplots(len(stocks), sharex=True, figsize=(16, 16))
     fig.suptitle('Sharing both axes')
     i = 0
     for stock in stocks:
-        axs[i].plot(y[stock] * (std[stock] - mean[stock]) + mean[stock])
-        axs[i].plot(y_pred[stock] * (std[stock] - mean[stock]) + mean[stock])
-        axs[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
+        plot_predicted_result(test_datasets[stock], y_pred[stock], stock, axs,
+                              i, means[stock], stds[stock])
         i += 1
-
     for ax in axs:
         ax.label_outer()
     plt.savefig("predict-" + filepath + ".png")
@@ -360,12 +368,12 @@ batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
 epochs = 200
-add_all_datasets_data = True
-model_input="FCN-LSTM" #CNNpred, CNN-LSTM
+add_all_datasets_data = False
+model_input="CNNpred" #CNNpred, CNN-LSTM
 filter=128
 units=128
 
-filepath = "{}-{}-{}-{}-{}-{}-{}-{}-32,16".format(
+filepath = "11{}-{}-{}-{}-{}-{}-{}-{}-32,16".format(
     model_input,
     input_sequence_length,
     number_feature,
@@ -441,73 +449,21 @@ if add_all_datasets_data:
     x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
     concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
 
-    for b in concat_ds:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    print("--------------")
-    for b in concat_ds1:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    if model_input=="CNN-LSTM":
-        model = CNN_LSTM_model(
-            concat_ds,
-            concat_ds1,
-            input_sequence_length,
-            number_feature,
-            epochs
-        )
-
-
-    elif model_input == "CNNpred":
-        model = CNNpred_model(
-            concat_ds,
-            concat_ds1,
-            input_sequence_length,
-            number_feature,
-            epochs
-        )
-
-    else:
-        model = FCN_LSTM_model(
-            concat_ds,
-            concat_ds1,
-            input_sequence_length,
-            number_feature,
-            epochs
-        )
-
-
-    for stock in stocks:
-        results[stock], y[stock], y_pred[stock] = predict(model, test_datasets[stock])
-
-    plot_predicted_result(y, y_pred, means, stds)
-
-else:
-
-
-    for stock in stocks:
-        global_stock = stock
-        if model_input == "CNN-LSTM":
+    for m in range(0, 3):
+        if model_input=="CNN-LSTM":
             model = CNN_LSTM_model(
-                train_datasets[stock],
-                val_datasets[stock],
+                concat_ds,
+                concat_ds1,
                 input_sequence_length,
                 number_feature,
                 epochs
             )
 
-        elif model_input=="CNNpred":
+
+        elif model_input == "CNNpred":
             model = CNNpred_model(
-                train_datasets[stock],
-                val_datasets[stock],
+                concat_ds,
+                concat_ds1,
                 input_sequence_length,
                 number_feature,
                 epochs
@@ -515,17 +471,76 @@ else:
 
         else:
             model = FCN_LSTM_model(
-                train_datasets[stock],
-                val_datasets[stock],
+                concat_ds,
+                concat_ds1,
                 input_sequence_length,
                 number_feature,
                 epochs
             )
-        results[stock], y[stock], y_pred[stock]  = predict(model, test_datasets[stock])
 
-    plot_predicted_result(y, y_pred, means, stds)
+
+        for stock in stocks:
+            r, y[stock], pred = predict(model, test_datasets[stock])
+            if stock in results.keys():
+                list0 = list(results[stock])
+                list0.append(r)
+                results[stock] = list0
+                list1 = list(y_pred[stock])
+                list1.append(pred)
+                y_pred[stock] = list1
+            else:
+                results[stock] = [r]
+                y_pred[stock] = [pred]
+
+    create_predicted_results_plot(y, y_pred, stocks, means, stds)
+
+else:
+
+
+    for stock in stocks:
+        global_stock = stock
+        for m in range(0, 3):
+            if model_input == "CNN-LSTM":
+                model = CNN_LSTM_model(
+                    train_datasets[stock],
+                    val_datasets[stock],
+                    input_sequence_length,
+                    number_feature,
+                    epochs
+                )
+
+            elif model_input=="CNNpred":
+                model = CNNpred_model(
+                    train_datasets[stock],
+                    val_datasets[stock],
+                    input_sequence_length,
+                    number_feature,
+                    epochs
+                )
+
+            else:
+                model = FCN_LSTM_model(
+                    train_datasets[stock],
+                    val_datasets[stock],
+                    input_sequence_length,
+                    number_feature,
+                    epochs
+                )
+            r, y[stock], pred = predict(model, test_datasets[stock])
+            if stock in results.keys():
+                list0 = list(results[stock])
+                list0.append(r)
+                results[stock] = list0
+                list1 = list(y_pred[stock])
+                list1.append(pred)
+                y_pred[stock] = list1
+            else:
+                results[stock] = [r]
+                y_pred[stock] = [pred]
+    create_predicted_results_plot(y, y_pred, stocks, means, stds)
 
 print("results")
 print(results)
+results = {k: np.array(v).mean(axis=0) for k,v in results.items()}
 create_bar_plot(results)
 pd.DataFrame.from_dict(results, orient='index', columns=["MAE", "RMSE"]).to_csv("results-" + filepath + ".csv")

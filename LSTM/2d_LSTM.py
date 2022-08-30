@@ -150,24 +150,39 @@ def LSTM_model(
     return model
 
 
-def plot_predicted_result(y, y_pred, stock, axes, i, mean, std):
+def plot_predicted_result(y_cache, y_pred_all, stock, axes, i, mean, std):
     # plt.figure(figsize=(18, 6))
+    _, y = next(y_cache.as_numpy_iterator())
+    y_pred=np.array(y_pred_all).mean(axis=0)
+    print("y_pred")
+    print(y_pred)
     axes[i].plot( y[:, 0]*(std-mean)+mean)
-    axes[i].plot( y_pred[:, 0]*(std-mean)+mean)
+    axes[i].plot( y_pred*(std-mean)+mean)
     axes[i].legend(["{} actual".format(stock), "{} forecast".format(stock)])
     # plt.title(stock)
     # plt.savefig(stock + "-predict-" + filepath + ".png")
 
+def create_predicted_results_plot(test_datasets, y_pred, stocks, means, stds):
+    fig, axs = plt.subplots(len(stocks), sharex=True, figsize=(16, 16))
+    fig.suptitle('Sharing both axes')
+    i = 0
+    for stock in stocks:
+        plot_predicted_result(test_datasets[stock], y_pred[stock], stock, axs,
+                              i, means[stock], stds[stock])
+        i += 1
+    for ax in axs:
+        ax.label_outer()
+    plt.savefig("predict-" + filepath + ".png")
 
-def predict(model, test_dataset: np.ndarray, stock, axes, i, mean, std):
+def predict(model, test_dataset: np.ndarray):
     x_test, y = next(test_dataset.as_numpy_iterator())
     print(x_test.shape)
     y_pred = model.predict(x_test)
-    print(y_pred.shape)
-    print(y.shape)
-    print(mean)
-    print(std)
-    plot_predicted_result(y, y_pred, stock, axes, i, mean, std)
+    # print(y_pred.shape)
+    # print(y.shape)
+    # print(mean)
+    # print(std)
+    # plot_predicted_result(y, y_pred, stock, axes, i, mean, std)
 
     # class_array_y_pred = y_pred[:, 0].astype(int)
     # class_array_y_pred = (array_y_pred[forecast_horizon:]/array_y_pred[:-forecast_horizon]).astype(int)
@@ -184,7 +199,7 @@ def predict(model, test_dataset: np.ndarray, stock, axes, i, mean, std):
     # DJI range(0,4), all stocks-> naive MAE: 0.0021673174502306954, model MAE: 0.05332288445767822
     # DJI range(0,1), all stocks-> [0.48148148148148145, 0.5185185185185185, 0.5105053881173285, 0.48148148148148145]
     # DJI range(0,4), all stocks-> [0.43434343434343436, 0.5656565656565656, 0.556793336803748, 0.43434343434343436]
-    return metric_results
+    return metric_results, y_pred[:, 0].tolist()
 
 
 def create_bar_plot(results):
@@ -209,14 +224,13 @@ def create_bar_plot(results):
 
     # Add some text for labels, title and custom x-axis tick labels, etc.
     print(summary_means + base_means)
-    ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.05, 0.05))
+    # ax.set_yticks(np.arange(0, max([*summary_means, *base_means]) + 0.005, 0.005))
     # ax.set_title('Scores by group and gender')
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.legend()
     fig.tight_layout()
     plt.savefig("results-" + filepath + ".png")
-
 
 train_size, val_size = 0.6, 0.2
 features = list(range(0, 83)) #+ list(range(40, 70))# +[6,10,14,17,19,31,37,54,61,65]
@@ -227,9 +241,9 @@ print(number_feature)
 batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
-epochs = 300
+epochs = 200
 add_all_datasets_data = True
-units=512
+units=64
 
 filepath = "{}-{}-{}-{}-{}-{}".format(
     input_sequence_length,
@@ -292,6 +306,7 @@ for file in data_files_names:
     test_datasets[stock] = test_dataset
 
 results = {}
+y_pred = {}
 print(stocks)
 if add_all_datasets_data:
 
@@ -301,61 +316,56 @@ if add_all_datasets_data:
     x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
     concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
 
-    for b in concat_ds:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    print("--------------")
-    for b in concat_ds1:
-        i, t = b
-        print("input")
-        print(i.shape)
-        print("target")
-        print(t.shape)
-
-    model = LSTM_model(
-        concat_ds,
-        concat_ds1,
-        input_sequence_length,
-        number_feature,
-        epochs
-    )
-
-    fig, axs = plt.subplots(len(stocks), sharex=True,  figsize=(16, 16))
-    fig.suptitle('Sharing both axes')
-    i = 0
-    for stock in stocks:
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i, means[stock], stds[stock])
-        i += 1
-    for ax in axs:
-        ax.label_outer()
-    plt.savefig("predict-" + filepath + ".png")
-
-else:
-
-    fig, axs = plt.subplots(len(stocks), sharex=True,  figsize=(16, 16))
-    fig.suptitle('Sharing both axes')
-    i = 0
-
-    for stock in stocks:
+    for m in range(0,3):
         model = LSTM_model(
-            train_datasets[stock],
-            val_datasets[stock],
+            concat_ds,
+            concat_ds1,
             input_sequence_length,
             number_feature,
             epochs
         )
+        for stock in stocks:
+            r, pred = predict(model, test_datasets[stock])
+            if stock in results.keys():
+                list0=list(results[stock])
+                list0.append(r)
+                results[stock] = list0
+                list1 = list(y_pred[stock])
+                list1.append(pred)
+                y_pred[stock] = list1
+            else:
+                results[stock] = [r]
+                y_pred[stock] = [pred]
 
-        results[stock] = predict(model, test_datasets[stock], stock, axs, i, means[stock], stds[stock])
-        i += 1
-    for ax in axs:
-        ax.label_outer()
-    plt.savefig("predict-" + filepath + ".png")
+    create_predicted_results_plot(test_datasets, y_pred, stocks, means, stds)
 
-print("results")
-print(results)
+else:
+
+    for stock in stocks:
+        for m in range(0, 3):
+            model = LSTM_model(
+                train_datasets[stock],
+                val_datasets[stock],
+                input_sequence_length,
+                number_feature,
+                epochs
+            )
+
+            r, pred = predict(model, test_datasets[stock])
+            if stock in results.keys():
+                list0 = list(results[stock])
+                list0.append(r)
+                results[stock] = list0
+                list1 = list(y_pred[stock])
+                list1.append(pred)
+                y_pred[stock] = list1
+            else:
+                results[stock] = [r]
+                y_pred[stock] = [pred]
+
+    create_predicted_results_plot(test_datasets, y_pred, stocks, means, stds)
+
+
+results = {k: np.array(v).mean(axis=0) for k,v in results.items()}
 create_bar_plot(results)
 pd.DataFrame.from_dict(results, orient='index', columns=["MAE", "RMSE"]).to_csv("results-" + filepath + ".csv")
