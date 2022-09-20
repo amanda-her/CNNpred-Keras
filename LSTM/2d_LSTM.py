@@ -233,7 +233,7 @@ def create_bar_plot(results):
     plt.savefig("results-" + filepath + ".png")
 
 train_size, val_size = 0.6, 0.2
-features = list(range(0, 83)) #+ list(range(40, 70))# +[6,10,14,17,19,31,37,54,61,65]
+features = list(range(0, 1)) #+ list(range(40, 70))# +[6,10,14,17,19,31,37,54,61,65]
 # features = range(0, 1) #INPUT
 print(features)
 number_feature = len(features)
@@ -242,16 +242,18 @@ batch_size = 128
 input_sequence_length = 60
 forecast_horizon = 1
 epochs = 200
-add_all_datasets_data = True
+add_all_datasets_data = False
 units=64
+iter=5
 
-filepath = "{}-{}-{}-{}-{}-{}".format(
+filepath = "{}-{}-{}-{}-{}-{}-{}".format(
     input_sequence_length,
     number_feature,
     epochs,
     batch_size,
     add_all_datasets_data,
-    units
+    units,
+    iter
 )
 
 data_files_path = "LSTM/Datasets"
@@ -316,7 +318,7 @@ if add_all_datasets_data:
     x = tf.data.Dataset.from_tensor_slices(val_datasets.values())
     concat_ds1 = x.interleave(lambda x: x, cycle_length=1, num_parallel_calls=tf.data.AUTOTUNE)
 
-    for m in range(0,3):
+    for m in range(0,iter):
         model = LSTM_model(
             concat_ds,
             concat_ds1,
@@ -342,7 +344,7 @@ if add_all_datasets_data:
 else:
 
     for stock in stocks:
-        for m in range(0, 3):
+        for m in range(0, iter):
             model = LSTM_model(
                 train_datasets[stock],
                 val_datasets[stock],
